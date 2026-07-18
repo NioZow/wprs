@@ -59,6 +59,7 @@ pub struct WprsdConfig {
     stderr_log_level: SerializableLevel,
     file_log_level: SerializableLevel,
     log_priv_data: bool,
+    no_clipboard: bool,
     enable_xwayland: bool,
     xwayland_xdg_shell_path: String,
     xwayland_xdg_shell_wayland_debug: bool,
@@ -78,6 +79,7 @@ impl Default for WprsdConfig {
             stderr_log_level: SerializableLevel(Level::INFO),
             file_log_level: SerializableLevel(Level::TRACE),
             log_priv_data: false,
+            no_clipboard: false,
             enable_xwayland: true,
             xwayland_xdg_shell_path: "xwayland-xdg-shell".to_string(),
             xwayland_xdg_shell_wayland_debug: false,
@@ -138,6 +140,7 @@ impl OptionalConfig<WprsdConfig> for OptionalWprsdConfig {
         let stderr_log_level = args::stderr_log_level();
         let file_log_level = args::file_log_level();
         let log_priv_data = args::log_priv_data();
+        let no_clipboard = args::no_clipboard();
         let enable_xwayland = enable_xwayland();
         let xwayland_xdg_shell_path = xwayland_xdg_shell_path();
         let xwayland_xdg_shell_wayland_debug = xwayland_xdg_shell_wayland_debug();
@@ -153,6 +156,7 @@ impl OptionalConfig<WprsdConfig> for OptionalWprsdConfig {
             stderr_log_level,
             file_log_level,
             log_priv_data,
+            no_clipboard,
             enable_xwayland,
             xwayland_xdg_shell_path,
             xwayland_xdg_shell_wayland_debug,
@@ -261,6 +265,7 @@ pub fn main() -> Result<()> {
         config.enable_xwayland,
         frame_interval,
         config.kde_server_side_decorations,
+        config.no_clipboard,
     );
 
     init_wayland_listener(&config.wayland_display, display, &mut state, &event_loop)

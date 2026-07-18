@@ -235,11 +235,25 @@ impl WprsServerState {
                     debug!(
                         "axis event: horizontal {horizontal:?}, vertical {vertical:?}, source {source:?}"
                     );
+                    // value120 is the modern high-res field (120 per detent).
+                    // discrete is the deprecated axis_discrete field (1 per detent);
+                    // multiply by 120 to convert to v120 units.
+                    // value120 takes precedence when sent by the compositor.
+                    let h_v120 = if horizontal.value120 != 0 {
+                        horizontal.value120
+                    } else {
+                        horizontal.discrete * 120
+                    };
+                    let v_v120 = if vertical.value120 != 0 {
+                        vertical.value120
+                    } else {
+                        vertical.discrete * 120
+                    };
                     let mut axis_frame = AxisFrame::new(time)
                         .value(Axis::Horizontal, horizontal.absolute)
                         .value(Axis::Vertical, vertical.absolute)
-                        .v120(Axis::Horizontal, horizontal.discrete)
-                        .v120(Axis::Vertical, vertical.discrete);
+                        .v120(Axis::Horizontal, h_v120)
+                        .v120(Axis::Vertical, v_v120);
 
                     if let Some(source) = source {
                         axis_frame = axis_frame.source(source.into());
@@ -676,6 +690,11 @@ impl WprsServerState {
                 source,
                 mime,
             )) => {
+                if self.no_clipboard
+                    && matches!(source, DataSource::Selection | DataSource::Primary)
+                {
+                    return Ok(());
+                }
                 let (recv_fd, send_fd) = unistd::pipe2(OFlag::O_CLOEXEC).location(loc!())?; // TODO: handle error
                 let mut f = File::from(recv_fd);
 
@@ -879,19 +898,23 @@ impl WprsServerState {
             },
             DataEvent::DestinationEvent(DataDestinationEvent::SelectionSet(source, metadata)) => {
                 match source {
-                    DataSource::Selection => data_device::set_data_device_selection(
-                        &self.dh,
-                        &self.seat,
-                        metadata.mime_types,
-                        (),
-                    ),
-                    DataSource::Primary => primary_selection::set_primary_selection(
-                        &self.dh,
-                        &self.seat,
-                        metadata.mime_types,
-                        (),
-                    ),
-                    DataSource::DnD => {},
+                    DataSource::Selection if !self.no_clipboard => {
+                        data_device::set_data_device_selection(
+                            &self.dh,
+                            &self.seat,
+                            metadata.mime_types,
+                            (),
+                        )
+                    },
+                    DataSource::Primary if !self.no_clipboard => {
+                        primary_selection::set_primary_selection(
+                            &self.dh,
+                            &self.seat,
+                            metadata.mime_types,
+                            (),
+                        )
+                    },
+                    _ => {},
                 };
             },
             DataEvent::TransferData(source, data) => {

@@ -55,6 +55,7 @@ pub struct WprscConfig {
     pub stderr_log_level: SerializableLevel,
     pub file_log_level: SerializableLevel,
     pub log_priv_data: bool,
+    pub no_clipboard: bool,
     pub title_prefix: String,
 }
 
@@ -69,6 +70,7 @@ impl Default for WprscConfig {
             stderr_log_level: SerializableLevel(Level::INFO),
             file_log_level: SerializableLevel(Level::TRACE),
             log_priv_data: false,
+            no_clipboard: false,
             title_prefix: String::new(),
         }
     }
@@ -90,6 +92,7 @@ impl OptionalConfig<WprscConfig> for OptionalWprscConfig {
         let stderr_log_level = args::stderr_log_level();
         let file_log_level = args::file_log_level();
         let log_priv_data = args::log_priv_data();
+        let no_clipboard = args::no_clipboard();
         let title_prefix = args::title_prefix();
         bpaf::construct!(Self {
             print_default_config_and_exit,
@@ -100,6 +103,7 @@ impl OptionalConfig<WprscConfig> for OptionalWprscConfig {
             stderr_log_level,
             file_log_level,
             log_priv_data,
+            no_clipboard,
             title_prefix,
         })
         .to_options()
@@ -151,6 +155,7 @@ fn main() -> Result<()> {
 
     let options = ClientOptions {
         title_prefix: config.title_prefix,
+        no_clipboard: config.no_clipboard,
     };
     let mut state = WprsClientState::new(
         event_queue.handle(),

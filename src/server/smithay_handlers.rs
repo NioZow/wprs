@@ -72,6 +72,7 @@ use smithay::wayland::compositor::SubsurfaceCachedState;
 use smithay::wayland::compositor::SurfaceAttributes;
 use smithay::wayland::compositor::SurfaceData;
 use smithay::wayland::output::OutputHandler;
+use smithay::wayland::selection::data_device::request_data_device_client_selection;
 use smithay::wayland::selection::data_device::with_source_metadata;
 use smithay::wayland::selection::data_device::ClientDndGrabHandler;
 use smithay::wayland::selection::data_device::DataDeviceHandler;
@@ -80,8 +81,11 @@ use smithay::wayland::selection::data_device::ServerDndGrabHandler;
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::SelectionSource;
 use smithay::wayland::selection::SelectionTarget;
+use smithay::wayland::selection::primary_selection::request_primary_client_selection;
 use smithay::wayland::selection::primary_selection::PrimarySelectionHandler;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::wlr_data_control::DataControlHandler;
+use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::shell::kde::decoration::KdeDecorationHandler;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::xdg::Configure;
@@ -421,15 +425,21 @@ impl SelectionHandler for WprsServerState {
         source: Option<SelectionSource>,
         _seat: Seat<Self>,
     ) {
+        let data_source = match ty {
+            SelectionTarget::Clipboard => DataSource::Selection,
+            SelectionTarget::Primary => DataSource::Primary,
+        };
+        if self.no_clipboard
+            && matches!(data_source, DataSource::Selection | DataSource::Primary)
+        {
+            return;
+        }
         if let Some(source) = source {
             self.serializer
                 .writer()
                 .send(SendType::Object(Request::Data(DataRequest::SourceRequest(
                     DataSourceRequest::SetSelection(
-                        match ty {
-                            SelectionTarget::Clipboard => DataSource::Selection,
-                            SelectionTarget::Primary => DataSource::Primary,
-                        },
+                        data_source,
                         SourceMetadata::from_mime_types(source.mime_types()),
                     ),
                 ))));
@@ -445,6 +455,21 @@ impl SelectionHandler for WprsServerState {
         _seat: Seat<Self>,
         _user_data: &Self::SelectionUserData,
     ) {
+        if self.no_clipboard {
+            // Selection is local-only; ask the local source to write directly.
+            match ty {
+                SelectionTarget::Clipboard => {
+                    request_data_device_client_selection(&self.seat, mime_type, fd)
+                        .log_and_ignore(loc!());
+                },
+                SelectionTarget::Primary => {
+                    request_primary_client_selection(&self.seat, mime_type, fd)
+                        .log_and_ignore(loc!());
+                },
+            }
+            return;
+        }
+
         let data_source = match ty {
             SelectionTarget::Clipboard => {
                 self.selection_pipe = Some(fd);
@@ -478,6 +503,12 @@ impl DataDeviceHandler for WprsServerState {
 impl PrimarySelectionHandler for WprsServerState {
     fn primary_selection_state(&self) -> &PrimarySelectionState {
         &self.primary_selection_state
+    }
+}
+
+impl DataControlHandler for WprsServerState {
+    fn data_control_state(&self) -> &DataControlState {
+        &self.data_control_state
     }
 }
 
@@ -1242,4 +1273,5 @@ smithay::delegate_seat!(WprsServerState);
 smithay::delegate_data_device!(WprsServerState);
 smithay::delegate_output!(WprsServerState);
 smithay::delegate_primary_selection!(WprsServerState);
+smithay::delegate_data_control!(WprsServerState);
 smithay::delegate_viewporter!(WprsServerState);

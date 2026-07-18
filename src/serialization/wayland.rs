@@ -369,6 +369,7 @@ pub enum KeyboardEvent {
 pub struct AxisScroll {
     pub absolute: f64,
     pub discrete: i32,
+    pub value120: i32,
     pub stop: bool,
 }
 
@@ -377,6 +378,7 @@ impl From<SctkAxisScroll> for AxisScroll {
         Self {
             absolute: axis_scroll.absolute,
             discrete: axis_scroll.discrete,
+            value120: axis_scroll.value120,
             stop: axis_scroll.stop,
         }
     }

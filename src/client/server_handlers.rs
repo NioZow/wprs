@@ -427,6 +427,11 @@ impl WprsClientState {
                 source,
                 mut source_metadata,
             )) => {
+                if self.no_clipboard
+                    && matches!(source, DataSource::Selection | DataSource::Primary)
+                {
+                    return Ok(());
+                }
                 match source {
                     DataSource::Selection => {
                         // TODO: support multiple seats

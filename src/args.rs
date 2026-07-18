@@ -237,6 +237,14 @@ pub fn title_prefix() -> impl Parser<Option<String>> {
         .optional()
 }
 
+
+pub fn no_clipboard() -> impl Parser<Option<bool>> {
+    bpaf::long("no-clipboard")
+        .argument::<bool>("BOOL")
+        .help("Disable clipboard synchronization between local and remote.")
+        .optional()
+}
+
 pub static LOG_PRIV_DATA: AtomicBool = AtomicBool::new(false);
 
 pub fn set_log_priv_data(val: bool) {

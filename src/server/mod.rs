@@ -36,6 +36,7 @@ use smithay::wayland::compositor::SurfaceData;
 use smithay::wayland::compositor::TraversalAction;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
@@ -99,6 +100,7 @@ pub struct WprsServerState {
     pub seat_state: SeatState<Self>,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
+    pub data_control_state: DataControlState,
     pub viewporter_state: ViewporterState,
 
     pub seat: Seat<Self>,
@@ -123,6 +125,7 @@ pub struct WprsServerState {
     dnd_source: Option<WlDataSource>,
     dnd_pipe: Option<OwnedFd>,
     primary_selection_pipe: Option<OwnedFd>,
+    pub no_clipboard: bool,
 }
 
 impl WprsServerState {
@@ -133,6 +136,7 @@ impl WprsServerState {
         xwayland_enabled: bool,
         frame_interval: Duration,
         kde_server_side_decorations: bool,
+        no_clipboard: bool,
     ) -> Self {
         let mut seat_state = SeatState::new();
         let seat = seat_state.new_wl_seat(&dh, "wprs");
@@ -156,6 +160,7 @@ impl WprsServerState {
             seat_state,
             data_device_state: DataDeviceState::new::<Self>(&dh),
             primary_selection_state: PrimarySelectionState::new::<Self>(&dh),
+            data_control_state: DataControlState::new::<Self, _>(&dh, None, |_| true),
             viewporter_state: ViewporterState::new::<Self>(&dh),
             seat,
             serializer,
@@ -170,6 +175,7 @@ impl WprsServerState {
             dnd_source: None,
             dnd_pipe: None,
             primary_selection_pipe: None,
+            no_clipboard,
         }
     }
 

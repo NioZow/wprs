@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+# Stage 1: build
+FROM rust:1.88.0 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libxkbcommon-dev \
+        libwayland-dev \
+        pkg-config
+
+WORKDIR /wprs
+COPY . .
+RUN cargo build --bin wprsc --profile release-lto
+
+# Stage 2: minimal runtime image
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libxkbcommon0
+
+COPY --from=builder /wprs/target/release-lto/wprsc /usr/local/bin/wprsc
+
+ENTRYPOINT ["/usr/local/bin/wprsc"]
