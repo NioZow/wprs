@@ -211,9 +211,17 @@ impl RemoteSubSurface {
         object_bimap: &mut ObjectBimap,
     ) -> Result<()> {
         let surface = surfaces.get_mut(&surface_id).location(loc!())?;
-        if surface.role.is_some() {
-            return Ok(());
-        }
+        // A surface keeps its subsurface role after its wl_subsurface is
+        // destroyed and can then be given a new wl_subsurface with a different
+        // parent (e.g., Firefox reuses the content surface of its popups), in
+        // which case we need to reparent the local subsurface.
+        let old_parent_id = match &surface.role {
+            None => None,
+            Some(Role::SubSurface(subsurface)) if subsurface.parent != parent_id => {
+                Some(subsurface.parent)
+            },
+            Some(_) => return Ok(()),
+        };
 
         let parent = {
             // It's possible that on initial sync, the server sent over a
@@ -242,6 +250,26 @@ impl RemoteSubSurface {
             remote_parent_surface.wl_surface().clone()
         };
 
+        if let Some(old_parent_id) = old_parent_id {
+            // The old parent may have already been destroyed.
+            if let Some(old_parent) = surfaces.get_mut(&old_parent_id) {
+                old_parent
+                    .z_ordered_children
+                    .retain(|child| child.id != surface_id);
+            }
+
+            surfaces
+                .get_mut(&surface_id)
+                .location(loc!())?
+                .role
+                .as_mut()
+                .location(loc!())?
+                .as_sub_surface_mut()
+                .location(loc!())?
+                .reparent(parent_id, &parent, subcompositor, qh);
+            return Ok(());
+        }
+
         let surface = surfaces.get_mut(&surface_id).location(loc!())?;
         if surface.role.is_some() {
             return Ok(());
@@ -265,6 +293,25 @@ impl RemoteSubSurface {
         }
 
         Ok(())
+    }
+
+    fn reparent(
+        &mut self,
+        parent_id: WlSurfaceId,
+        parent: &WlSurface,
+        subcompositor: &WlSubcompositor,
+        qh: &QueueHandle<WprsClientState>,
+    ) {
+        self.local_subsurface.destroy();
+        self.local_subsurface = subcompositor.get_subsurface(
+            self.local_surface.wl_surface(),
+            parent,
+            qh,
+            SubSurfaceData,
+        );
+        self.parent = parent_id;
+        // New subsurfaces start out in sync mode.
+        self.sync = true;
     }
 
     pub fn update(subsurface_state: &SubSurfaceState, surface: &mut RemoteSurface) -> Result<()> {

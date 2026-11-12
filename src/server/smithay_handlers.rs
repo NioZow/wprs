@@ -789,8 +789,8 @@ pub fn commit_impl(
         // TODO: figure out why some subsurfaces don't have parents. Probably a
         // race condition related to commits and other events.
         // let parent = parent.unwrap();  // every subsurface has a parent
-        if let Some(parent) = parent {
-            surface_state.role = Some(Role::SubSurface(SubSurfaceState::new(&parent)));
+        if let Some(parent) = &parent {
+            surface_state.role = Some(Role::SubSurface(SubSurfaceState::new(parent)));
         } else {
             debug!("NO PARENT FOR SUBSURFACE {:?}", surface_state)
         }
@@ -858,6 +858,14 @@ pub fn commit_impl(
     match &mut surface_state.role {
         Some(Role::Cursor(_)) => {},
         Some(Role::SubSurface(subsurface_state)) => {
+            // A surface keeps the subsurface role after its wl_subsurface is
+            // destroyed and can then be given a new wl_subsurface with a
+            // different parent (e.g., Firefox reuses the content surface of
+            // its popups), so the parent needs to be refreshed on every
+            // commit.
+            if let Some(parent) = &parent {
+                subsurface_state.parent = WlSurfaceId::new(parent);
+            }
             subsurface_state.sync = sync;
             subsurface_state.location = surface_data
                 .cached_state
