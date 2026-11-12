@@ -710,10 +710,11 @@ impl WprsServerState {
                         debug!("in receive read thread");
                         let mut buf = Vec::new();
                         let bytes_read = f.read_to_end(&mut buf);
-                        debug!("read selection ({bytes_read:?} bytes): {buf:?}");
+                        let data = DataToTransfer(buf);
+                        debug!("read selection ({bytes_read:?} bytes): {data:?}");
                         writer.send(SendType::Object(Request::Data(DataRequest::TransferData(
                             source,
-                            DataToTransfer(buf),
+                            data,
                         ))))
                             // This should be infallible, writer is an
                             // InfallibleWriter, but we can't prove that to the

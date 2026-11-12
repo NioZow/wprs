@@ -345,7 +345,7 @@ impl From<SmithayModifiers> for ModifierState {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Archive, Deserialize, Serialize)]
+#[derive(Clone, Eq, PartialEq, Archive, Deserialize, Serialize)]
 pub enum KeyboardEvent {
     Enter {
         serial: u32,
@@ -363,6 +363,53 @@ pub enum KeyboardEvent {
         modifier_state: ModifierState,
         layout_index: u32,
     },
+}
+
+impl fmt::Debug for KeyboardEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Enter {
+                serial,
+                surface_id,
+                keycodes,
+                keysyms,
+            } => {
+                let log_priv_data = args::get_log_priv_data();
+                f.debug_struct("Enter")
+                    .field("serial", serial)
+                    .field("surface_id", surface_id)
+                    .field(
+                        "keycodes",
+                        if log_priv_data {
+                            keycodes
+                        } else {
+                            &"<redacted>"
+                        },
+                    )
+                    .field(
+                        "keysyms",
+                        if log_priv_data {
+                            keysyms
+                        } else {
+                            &"<redacted>"
+                        },
+                    )
+                    .finish()
+            },
+            Self::Leave { serial } => f.debug_struct("Leave").field("serial", serial).finish(),
+            Self::Key(key) => f.debug_tuple("Key").field(key).finish(),
+            Self::RepeatInfo(info) => f.debug_tuple("RepeatInfo").field(info).finish(),
+            Self::Keymap(keymap) => f.debug_tuple("Keymap").field(keymap).finish(),
+            Self::Modifiers {
+                modifier_state,
+                layout_index,
+            } => f
+                .debug_struct("Modifiers")
+                .field("modifier_state", modifier_state)
+                .field("layout_index", layout_index)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Archive, Deserialize, Serialize)]
@@ -1111,5 +1158,40 @@ impl From<&ViewportCachedState> for ViewportState {
             src: viewport_state.src.map(Into::into),
             dst: viewport_state.dst.map(Into::into),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // These tests rely on the global LOG_PRIV_DATA flag being at its default
+    // (false); no test sets it.
+
+    #[test]
+    fn keyboard_enter_debug_redacts_keys() {
+        let event = KeyboardEvent::Enter {
+            serial: 7,
+            surface_id: WlSurfaceId(99),
+            keycodes: vec![12345, 67890],
+            keysyms: vec![424242],
+        };
+        let s = format!("{event:?}");
+        assert!(s.contains("<redacted>"), "{s}");
+        assert!(s.contains("serial: 7"), "{s}");
+        assert!(s.contains("99"), "{s}");
+        assert!(!s.contains("12345"), "{s}");
+        assert!(!s.contains("67890"), "{s}");
+        assert!(!s.contains("424242"), "{s}");
+    }
+
+    #[test]
+    fn data_to_transfer_debug_redacts_contents() {
+        let data = DataToTransfer(b"hunter2".to_vec());
+        let s = format!("{data:?}");
+        assert!(s.contains("<redacted>"), "{s}");
+        // Neither the raw bytes nor their Debug (decimal list) form appear.
+        assert!(!s.contains("hunter2"), "{s}");
+        assert!(!s.contains("104, 117"), "{s}");
     }
 }

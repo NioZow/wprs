@@ -415,7 +415,11 @@ impl SeatHandler for WprsClientState {
 }
 
 impl KeyboardHandler for WprsClientState {
-    #[instrument(skip(self, _conn, _qh, _keyboard), level = "debug")]
+    #[instrument(
+        skip(self, _conn, _qh, _keyboard, raw, keysyms),
+        fields(raw = "<redacted>", keysyms = "<redacted>"),
+        level = "debug"
+    )]
     fn enter(
         &mut self,
         _conn: &Connection,
@@ -426,6 +430,10 @@ impl KeyboardHandler for WprsClientState {
         raw: &[u32],
         keysyms: &[Keysym],
     ) {
+        if args::get_log_priv_data() {
+            Span::current().record("raw", field::debug(&raw));
+            Span::current().record("keysyms", field::debug(&keysyms));
+        }
         self.current_focus = Some(surface.clone());
         let Some((_, surface_id)) = self.object_bimap.get_wl_surface_id(&surface.id()) else {
             // TODO: unwrap is wrong, we can enter before surface exists.
