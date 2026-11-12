@@ -7,6 +7,16 @@
     let
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+
+      # Shared between the package and the devShell.
+      nativeBuildInputs = pkgs: with pkgs; [
+        pkg-config
+      ];
+
+      buildInputs = pkgs: with pkgs; [
+        libxkbcommon
+        wayland
+      ];
     in
     {
       packages = forAllSystems (system:
@@ -22,14 +32,8 @@
               lockFile = ./Cargo.lock;
             };
 
-            nativeBuildInputs = with pkgs; [
-              pkg-config
-            ];
-
-            buildInputs = with pkgs; [
-              libxkbcommon
-              wayland
-            ];
+            nativeBuildInputs = nativeBuildInputs pkgs;
+            buildInputs = buildInputs pkgs;
 
             doCheck = false;
           };
@@ -93,15 +97,15 @@
         in
         {
           default = pkgs.mkShell {
-            inputsFrom = [
-              self.packages.${system}.daemon
-              self.packages.${system}.client
-            ];
-            buildInputs = with pkgs; [
+            # The toolchain comes from rustup (rust-toolchain.toml), so only
+            # take the system dependencies from the package rather than using
+            # inputsFrom, which would also pull in nixpkgs' cargo and rustc.
+            nativeBuildInputs = nativeBuildInputs pkgs;
+            buildInputs = buildInputs pkgs ++ (with pkgs; [
               rustup
               python3
               python3Packages.psutil
-            ];
+            ]);
             shellHook = ''
               export RUST_BACKTRACE=1
             '';
