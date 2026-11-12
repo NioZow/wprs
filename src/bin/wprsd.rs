@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -249,7 +248,7 @@ pub fn main() -> Result<()> {
     .location(loc!())?;
     utils::exit_on_thread_panic();
 
-    fs::create_dir_all(config.socket.parent().location(loc!())?).location(loc!())?;
+    utils::create_secure_dir(config.socket.parent().location(loc!())?).location(loc!())?;
     let mut serializer = Serializer::new_server(&config.socket).location(loc!())?;
     let reader = serializer.reader().location(loc!())?;
 

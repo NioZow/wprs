@@ -491,6 +491,10 @@ fn accept_loop<ST, RT>(
         loop {
             debug!("waiting for client connection");
             let (stream, _) = listener.accept().unwrap();
+            if let Err(e) = utils::check_peer_uid(&stream) {
+                warn!("rejecting wprs client connection: {e:?}");
+                continue;
+            }
             info!("wprs client connected");
             let (read_thread, write_thread) = spawn_rw_loops(
                 scope,
@@ -606,6 +610,7 @@ where
 
     pub fn new_client<P: AsRef<Path>>(sock_path: P) -> Result<Self> {
         let stream = UnixStream::connect(sock_path).location(loc!())?;
+        utils::check_peer_uid(&stream).location(loc!())?;
         enlarge_socket_buffer(&stream);
 
         let (reader_tx, reader_rx): (channel::SyncSender<RecvType<RT>>, Channel<RecvType<RT>>) =

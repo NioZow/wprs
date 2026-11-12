@@ -7,6 +7,7 @@ import json
 import os
 import os.path
 import pathlib
+import pwd
 import shlex
 import socket
 import stat
@@ -130,7 +131,27 @@ def xdg_runtime_dir() -> str | None:
 
 
 def socket_dir() -> str:
-  return xdg_runtime_dir() or os.getenv('TMPDIR') or '/tmp'
+  # Matches socket_dir() in src/args.rs.
+  return xdg_runtime_dir() or os.path.join(
+      os.getenv('TMPDIR') or '/tmp', pwd.getpwuid(os.getuid()).pw_name)
+
+
+def ensure_socket_dir() -> None:
+  """Creates socket_dir() with mode 0700 and checks that it is safe to use.
+
+  Mirrors utils::create_secure_dir in wprsc/wprsd.
+  """
+  path = socket_dir()
+  os.makedirs(path, mode=0o700, exist_ok=True)
+  st = os.lstat(path)
+  if not stat.S_ISDIR(st.st_mode):
+    raise RuntimeError(f'Socket directory {path} is not a directory.')
+  if st.st_uid != os.geteuid():
+    raise RuntimeError(
+        f'Socket directory {path} is not owned by the current user.')
+  if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    raise RuntimeError(
+        f'Socket directory {path} must not be writable by group or others.')
 
 
 def get_hashed_destination_params():
@@ -215,9 +236,6 @@ def check_ssh_tunnel() -> bool:
   return subprocess.run(cmd, env=os.environ).returncode == 0
 
 
-def remote_env_var(var: str) -> str:
-  return run_remote_command_with_stdout(['sh', '-c', f'"echo ${var}"'])
-
 def run_remote_command_with_stdout(remote_cmd: list[str]) -> str:
   cmd = (SSH_COMMON_ARGS +
         args.additional_ssh_command_args +
@@ -231,7 +249,10 @@ def run_remote_command_with_stdout(remote_cmd: list[str]) -> str:
     text=True).stdout.strip()
 
 def remote_socket_dir() -> str:
-  return remote_env_var('XDG_RUNTIME_DIR') or remote_env_var('TEMPDIR') or '/tmp'
+  # Matches socket_dir() in src/args.rs, which wprsd uses by default.
+  script = ('d="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}/$(id -un)}"; '
+            'mkdir -p -m 700 "$d" && echo "$d"')
+  return run_remote_command_with_stdout(['sh', '-c', shlex.quote(script)])
 
 
 def forward_wprs_sock() -> None:
@@ -496,6 +517,7 @@ def forward_sockets() -> None:
 
 
 def attach() -> Capabilities | None:
+  ensure_socket_dir()
   if not check_ssh_tunnel():
     start_ssh_tunnel()
 

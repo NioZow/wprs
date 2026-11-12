@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fs;
 use std::path::PathBuf;
 
 use bpaf::Parser;
@@ -140,7 +139,7 @@ fn main() -> Result<()> {
 
     let (globals, event_queue) = registry_queue_init(&conn)?;
 
-    fs::create_dir_all(config.socket.parent().location(loc!())?).location(loc!())?;
+    utils::create_secure_dir(config.socket.parent().location(loc!())?).location(loc!())?;
     let mut serializer = Serializer::new_client(&config.socket).with_context(loc!(), || {
         format!(
             "Serializer unable to connect to socket {:?}.",

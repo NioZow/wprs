@@ -93,12 +93,19 @@ where
     P: AsRef<Path>,
     F: Fn(&str) -> Result<String> + Send + Sync + Clone + 'static,
 {
+    if let Some(parent) = sock_path.as_ref().parent() {
+        utils::create_secure_dir(parent).location(loc!())?;
+    }
     let listener = utils::bind_user_socket(sock_path).location(loc!())?;
 
     thread::spawn(move || -> Result<()> {
         loop {
             let accept_result = listener.accept();
             let (stream, _) = log_and_continue!(accept_result);
+            if let Err(e) = utils::check_peer_uid(&stream) {
+                warn!("rejecting control connection: {e:?}");
+                continue;
+            }
             let handler = handler.clone();
             thread::spawn(move || {
                 control_handler(stream, handler).log_and_ignore(loc!());

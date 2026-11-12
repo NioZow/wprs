@@ -17,6 +17,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io;
+use std::os::fd::AsFd;
+use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::UnixListener;
 use std::panic;
 use std::path::Path;
@@ -24,8 +27,11 @@ use std::process;
 use std::sync::Mutex;
 use std::thread::ScopedJoinHandle;
 
+use nix::sys::socket;
+use nix::sys::socket::sockopt::PeerCredentials;
 use nix::sys::stat;
 use nix::sys::stat::Mode;
+use nix::unistd;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::utils::Serial;
 use tracing::Level;
@@ -158,6 +164,61 @@ pub fn bind_user_socket<P: AsRef<Path>>(sock_path: P) -> Result<UnixListener> {
     Ok(listener)
 }
 
+/// Creates `dir` (and any missing parents) with mode 0700 if it does not
+/// exist, then verifies that it is a real directory (not a symlink) owned by
+/// the current effective user and not writable by group or others.
+///
+/// This guards against another local user pre-creating the socket directory
+/// (e.g. /tmp/<user>) and swapping the socket out from under us.
+pub fn create_secure_dir<P: AsRef<Path>>(dir: P) -> Result<()> {
+    let dir = dir.as_ref();
+    // Path::parent() returns "" for a bare relative file name.
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .location(loc!())?;
+
+    let metadata = fs::symlink_metadata(dir).location(loc!())?;
+    if !metadata.file_type().is_dir() {
+        bail!("Socket directory {dir:?} is not a directory (it may be a symlink).");
+    }
+    let euid = unistd::geteuid().as_raw();
+    if metadata.uid() != euid {
+        bail!(
+            "Socket directory {dir:?} is owned by uid {}, not the current user (uid {euid}).",
+            metadata.uid()
+        );
+    }
+    if metadata.mode() & 0o022 != 0 {
+        bail!(
+            "Socket directory {dir:?} has insecure permissions {:o}, it must not be writable by group or others.",
+            metadata.mode() & 0o7777
+        );
+    }
+    Ok(())
+}
+
+/// Verifies that the peer connected to the given unix socket is running as
+/// the same user as the current process.
+pub fn check_peer_uid<F: AsFd>(stream: &F) -> Result<()> {
+    let creds = socket::getsockopt(stream, PeerCredentials).location(loc!())?;
+    let euid = unistd::geteuid().as_raw();
+    if creds.uid() != euid {
+        bail!(
+            "Peer on unix socket has uid {} (pid {}), expected uid {euid}.",
+            creds.uid(),
+            creds.pid()
+        );
+    }
+    Ok(())
+}
+
 // https://github.com/nvzqz/static-assertions/issues/21
 // https://stackoverflow.com/questions/72582671/const-generics-how-to-ensure-that-usize-const-is-0
 pub struct AssertN<const N: usize>;
@@ -171,4 +232,102 @@ pub struct AssertN3<const N1: usize, const N2: usize, const N3: usize>;
 
 impl<const N1: usize, const N2: usize, const N3: usize> AssertN3<N1, N2, N3> {
     pub const N1_X_N2_EQ_N3: () = assert!(N1.checked_mul(N2).unwrap() == N3);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::symlink;
+    use std::os::unix::net::UnixStream;
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn unique_temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("wprs-test-{}-{name}", process::id()))
+    }
+
+    #[test]
+    fn create_secure_dir_creates_private_dir() {
+        let base = unique_temp_path("secure-new");
+        let dir = base.join("nested");
+        create_secure_dir(&dir).unwrap();
+        let mode = fs::metadata(&dir).unwrap().permissions().mode();
+        fs::remove_dir_all(&base).unwrap();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn create_secure_dir_accepts_existing_0755_dir() {
+        let dir = unique_temp_path("secure-0755");
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        let result = create_secure_dir(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        result.unwrap();
+    }
+
+    #[test]
+    fn create_secure_dir_rejects_group_writable_dir() {
+        let dir = unique_temp_path("secure-g+w");
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o770)).unwrap();
+        let result = create_secure_dir(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_secure_dir_rejects_symlink() {
+        let target = unique_temp_path("secure-target");
+        let link = unique_temp_path("secure-link");
+        fs::create_dir(&target).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+        symlink(&target, &link).unwrap();
+        let result = create_secure_dir(&link);
+        fs::remove_file(&link).unwrap();
+        fs::remove_dir_all(&target).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_secure_dir_rejects_other_writable_dir() {
+        let dir = unique_temp_path("secure-o+w");
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o757)).unwrap();
+        let result = create_secure_dir(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_secure_dir_rejects_regular_file() {
+        let path = unique_temp_path("secure-file");
+        fs::write(&path, b"").unwrap();
+        let result = create_secure_dir(&path);
+        fs::remove_file(&path).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn check_peer_uid_accepts_listener_connection() {
+        let dir = unique_temp_path("peer-listener");
+        create_secure_dir(&dir).unwrap();
+        let sock_path = dir.join("test.sock");
+        let listener = bind_user_socket(&sock_path).unwrap();
+        let client = UnixStream::connect(&sock_path).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let server_result = check_peer_uid(&server);
+        let client_result = check_peer_uid(&client);
+        fs::remove_dir_all(&dir).unwrap();
+        server_result.unwrap();
+        client_result.unwrap();
+    }
+
+    #[test]
+    fn check_peer_uid_accepts_same_user() {
+        let (a, b) = UnixStream::pair().unwrap();
+        check_peer_uid(&a).unwrap();
+        check_peer_uid(&b).unwrap();
+    }
 }
