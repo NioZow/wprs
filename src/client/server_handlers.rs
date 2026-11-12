@@ -27,6 +27,7 @@ use crate::client::RemoteXdgPopup;
 use crate::client::RemoteXdgToplevel;
 use crate::client::Role;
 use crate::client::WprsClientState;
+use crate::client::clipboard_blocked;
 use crate::client::subsurface;
 use crate::client::subsurface::RemoteSubSurface;
 use crate::fallible_entry::FallibleEntryExt;
@@ -427,9 +428,7 @@ impl WprsClientState {
                 source,
                 mut source_metadata,
             )) => {
-                if self.no_clipboard
-                    && matches!(source, DataSource::Selection | DataSource::Primary)
-                {
+                if clipboard_blocked(self.no_clipboard, source) {
                     return Ok(());
                 }
                 match source {
@@ -482,6 +481,10 @@ impl WprsClientState {
                 source,
                 mime_type,
             )) => {
+                if clipboard_blocked(self.no_clipboard, source) {
+                    debug!("refusing {source:?} data transfer request: clipboard is disabled");
+                    return Ok(());
+                }
                 let read_pipe = match source {
                     DataSource::Primary => {
                         let cur_offer = self
@@ -550,6 +553,9 @@ impl WprsClientState {
                 }
             },
             DataRequest::TransferData(source, data) => {
+                if clipboard_blocked(self.no_clipboard, source) {
+                    return Ok(());
+                }
                 let write_pipe = match source {
                     DataSource::Primary => self.primary_selection_pipe.take().location(loc!())?,
                     DataSource::Selection => self.selection_pipe.take().location(loc!())?, // TODO

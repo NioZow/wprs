@@ -745,6 +745,9 @@ impl DataDeviceHandler for WprsClientState {
         _qh: &QueueHandle<Self>,
         data_device: &WlDataDevice,
     ) {
+        if self.no_clipboard {
+            return;
+        }
         let data_device = &self
             .seat_objects
             .iter()
@@ -933,7 +936,7 @@ impl PrimarySelectionDeviceHandler for WprsClientState {
         _qh: &QueueHandle<Self>,
         primary_selection_device: &ZwpPrimarySelectionDeviceV1,
     ) {
-        if self.primary_selection_manager_state.is_none() {
+        if self.no_clipboard || self.primary_selection_manager_state.is_none() {
             return;
         }
         let primary_selection_device = &self

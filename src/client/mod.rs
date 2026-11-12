@@ -69,6 +69,7 @@ use crate::serialization::wayland::Buffer;
 use crate::serialization::wayland::BufferAssignment;
 use crate::serialization::wayland::BufferData;
 use crate::serialization::wayland::BufferMetadata;
+use crate::serialization::wayland::DataSource;
 use crate::serialization::wayland::Region;
 use crate::serialization::wayland::SubsurfacePosition;
 use crate::serialization::wayland::UncompressedBufferData;
@@ -100,6 +101,13 @@ impl ObjectBimapExt for ObjectBimap {
             _ => panic!("Object corresponding to client object id {key} should be a WlSurface,"),
         }
     }
+}
+
+/// Returns true if clipboard transfers for `source` must be refused because
+/// the clipboard (selection and primary selection) is disabled. DnD is not
+/// affected by `no_clipboard`.
+pub(crate) fn clipboard_blocked(no_clipboard: bool, source: DataSource) -> bool {
+    no_clipboard && matches!(source, DataSource::Selection | DataSource::Primary)
 }
 
 pub struct ClientOptions {
@@ -796,5 +804,20 @@ impl RemoteDisplay {
 impl Default for RemoteDisplay {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipboard_blocked_only_when_disabled() {
+        for source in [DataSource::Selection, DataSource::Primary, DataSource::DnD] {
+            assert!(!clipboard_blocked(false, source));
+        }
+        assert!(clipboard_blocked(true, DataSource::Selection));
+        assert!(clipboard_blocked(true, DataSource::Primary));
+        assert!(!clipboard_blocked(true, DataSource::DnD));
     }
 }
