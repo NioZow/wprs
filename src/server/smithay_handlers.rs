@@ -910,17 +910,24 @@ pub fn commit_impl(
         },
     }
 
+    let buffer_size = surface_state
+        .buffer
+        .as_ref()
+        .and_then(BufferAssignment::as_new)
+        .map(|buffer| (buffer.metadata.width, buffer.metadata.height));
     let damage = mem::take(&mut surface_attributes.damage)
         .iter()
         .map(|damage| match damage {
             Damage::Buffer(rect) => *rect,
-            Damage::Surface(rect) => rect.to_buffer(
+            Damage::Surface(rect) => compositor_utils::surface_damage_to_buffer(
+                *rect,
                 surface_state.buffer_scale,
                 surface_state
                     .buffer_transform
                     .unwrap_or(Transform::Normal)
                     .into(),
-                &rect.size,
+                surface_state.viewport_state.as_ref(),
+                buffer_size,
             ),
         })
         .map(Into::into)
