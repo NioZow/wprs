@@ -60,6 +60,11 @@ parser.add_argument('--wprsc-wayland-debug',
 parser.add_argument('--wprsc-args',
                     type=shlex.split,
                     default='')
+parser.add_argument('--no-clipboard',
+                    type=boolean,
+                    choices=[True, False],
+                    default=False,
+                    help='Disable clipboard synchronization between local and remote.')
 parser.add_argument('--additional-ssh-tunnel-args',
                     type=shlex.split,
                     default='')
@@ -404,6 +409,12 @@ def get_title_prefix() -> [str]:
   else:
     return []
 
+def get_no_clipboard_args() -> [str]:
+  if args.no_clipboard:
+    return ['--no-clipboard=true']
+  else:
+    return []
+
 def maybe_start_wprsc() -> Capabilities | None:
   # Using different names for the forwarded socket paths allows e.g.
   # running multiple instances without conflicts.
@@ -411,7 +422,7 @@ def maybe_start_wprsc() -> Capabilities | None:
                  f'--control-socket={get_wprs_control_socket_path()}']
 
   cmd = ([args.wprsc_path] + args.wprsc_args + get_title_prefix()
-         + socket_args)
+         + get_no_clipboard_args() + socket_args)
   should_start_wprsc = False
   proc = wprsc_proc()
 
