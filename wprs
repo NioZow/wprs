@@ -295,14 +295,6 @@ def forward_pulse_sock() -> None:
   subprocess.run(cmd, env=os.environ, check=True)
 
 
-def create_ssh_auth_sock_symlink() -> None:
-  cmd = (SSH_COMMON_ARGS +
-         [args.destination,
-          'sh', '-c', f'"ln -sf $SSH_AUTH_SOCK {remote_socket_dir()}/wprs-ssh-auth.sock"'])
-  print(f'Creating SSH_AUTH_SOCK symlink: {cmd!r}')
-  subprocess.run(cmd, env=os.environ, check=True)
-
-
 def get_wprs_pid_file():
   return os.path.join(socket_dir(),
                       f'wprsc_{get_hashed_destination_params()}.pid')
@@ -498,7 +490,6 @@ def start_remote_command(caps: Capabilities | None) -> None:
   env = {
     'WAYLAND_DEBUG': str(int(args.command_wayland_debug)),
     'WAYLAND_DISPLAY': args.wprsd_wayland_display,
-    'SSH_AUTH_SOCK': f'{remote_socket_dir()}/wprs-ssh-auth.sock',
     'XCURSOR_SIZE': get_x_cursor_size(),
     'XDG_SESSION_TYPE': 'wayland', # Ensure session type is set to wayland for Qt apps.
   }
@@ -540,8 +531,6 @@ def attach() -> Capabilities | None:
     detach()
     start_ssh_tunnel()
     forward_sockets()
-
-  create_ssh_auth_sock_symlink()
 
   return maybe_start_wprsc()
 
